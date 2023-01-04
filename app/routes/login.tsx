@@ -1,83 +1,45 @@
+import { redirect } from "@remix-run/node";
+import { maxAgeSession, getSession, commitSession } from "~/services/session.server"
+import { authenticator, AUTH_STRATEGIES } from "~/services/auth.server"
 import type { ActionArgs, LoaderArgs, MetaFunction } from "@remix-run/node";
-import { json, redirect } from "@remix-run/node";
-import { Form, Link, useActionData, useSearchParams } from "@remix-run/react";
-import * as React from "react";
-
-import { verifyLogin } from "~/models/user.server";
-import { createUserSession, getUserId } from "~/session.server";
-import { safeRedirect, validateEmail } from "~/utils";
+import { Form, useSearchParams } from "@remix-run/react";
 
 export async function loader({ request }: LoaderArgs) {
-  const userId = await getUserId(request);
-  if (userId) return redirect("/");
-  return json({});
+  return authenticator.isAuthenticated(request, { successRedirect: '/' })
 }
 
 export async function action({ request }: ActionArgs) {
-  const formData = await request.formData();
-  const email = formData.get("email");
-  const password = formData.get("password");
-  const redirectTo = safeRedirect(formData.get("redirectTo"), "/");
-  const remember = formData.get("remember");
 
-  if (!validateEmail(email)) {
-    return json(
-      { errors: { email: "Email is invalid", password: null } },
-      { status: 400 }
-    );
-  }
-
-  if (typeof password !== "string" || password.length === 0) {
-    return json(
-      { errors: { password: "Password is required", email: null } },
-      { status: 400 }
-    );
-  }
-
-  if (password.length < 8) {
-    return json(
-      { errors: { password: "Password is too short", email: null } },
-      { status: 400 }
-    );
-  }
-
-  const user = await verifyLogin(email, password);
-
-  if (!user) {
-    return json(
-      { errors: { email: "Invalid email or password", password: null } },
-      { status: 400 }
-    );
-  }
-
-  return createUserSession({
+  const clonedRequest = request.clone()
+  const formData = await clonedRequest.formData()
+  const user = await authenticator.authenticate(
+    AUTH_STRATEGIES.withPassword,
     request,
-    userId: user.id,
-    remember: remember === "on" ? true : false,
-    redirectTo,
-  });
+    { failureRedirect: "/login" }
+  )
+
+  const session = await getSession(
+    request.headers.get("cookie")
+  )
+  session.set(authenticator.sessionKey, user)
+  const maxAge = maxAgeSession(formData.get("remember") as string)
+  const headers = new Headers({
+    "Set-Cookie": await commitSession(
+      session,
+      { maxAge }
+    )
+  })
+
+  return redirect("/", { headers })
 }
 
 export const meta: MetaFunction = () => {
-  return {
-    title: "Login",
-  };
+  return { title: "Login" }
 };
 
 export default function LoginPage() {
-  const [searchParams] = useSearchParams();
-  const redirectTo = searchParams.get("redirectTo") || "/notes";
-  const actionData = useActionData<typeof action>();
-  const emailRef = React.useRef<HTMLInputElement>(null);
-  const passwordRef = React.useRef<HTMLInputElement>(null);
-
-  React.useEffect(() => {
-    if (actionData?.errors?.email) {
-      emailRef.current?.focus();
-    } else if (actionData?.errors?.password) {
-      passwordRef.current?.focus();
-    }
-  }, [actionData]);
+  const [searchParams] = useSearchParams()
+  const redirectTo = searchParams.get("redirectTo") || "/notes"
 
   return (
     <div className="flex min-h-full flex-col justify-center">
@@ -88,26 +50,20 @@ export default function LoginPage() {
               htmlFor="email"
               className="block text-sm font-medium text-gray-700"
             >
-              Email address
+              Email
             </label>
             <div className="mt-1">
               <input
-                ref={emailRef}
                 id="email"
+                className="w-full rounded border border-gray-500 px-2 py-1 text-lg"
                 required
                 autoFocus={true}
                 name="email"
                 type="email"
+                defaultValue='rachel@remix.run'
                 autoComplete="email"
-                aria-invalid={actionData?.errors?.email ? true : undefined}
                 aria-describedby="email-error"
-                className="w-full rounded border border-gray-500 px-2 py-1 text-lg"
               />
-              {actionData?.errors?.email && (
-                <div className="pt-1 text-red-700" id="email-error">
-                  {actionData.errors.email}
-                </div>
-              )}
             </div>
           </div>
 
@@ -120,20 +76,14 @@ export default function LoginPage() {
             </label>
             <div className="mt-1">
               <input
+                className="w-full rounded border border-gray-500 px-2 py-1 text-lg"
                 id="password"
-                ref={passwordRef}
                 name="password"
                 type="password"
+                defaultValue='racheliscool'
                 autoComplete="current-password"
-                aria-invalid={actionData?.errors?.password ? true : undefined}
                 aria-describedby="password-error"
-                className="w-full rounded border border-gray-500 px-2 py-1 text-lg"
               />
-              {actionData?.errors?.password && (
-                <div className="pt-1 text-red-700" id="password-error">
-                  {actionData.errors.password}
-                </div>
-              )}
             </div>
           </div>
 
@@ -158,18 +108,6 @@ export default function LoginPage() {
               >
                 Remember me
               </label>
-            </div>
-            <div className="text-center text-sm text-gray-500">
-              Don't have an account?{" "}
-              <Link
-                className="text-blue-500 underline"
-                to={{
-                  pathname: "/join",
-                  search: searchParams.toString(),
-                }}
-              >
-                Sign up
-              </Link>
             </div>
           </div>
         </Form>

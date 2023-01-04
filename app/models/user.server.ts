@@ -32,31 +32,23 @@ export async function deleteUserByEmail(email: User["email"]) {
   return prisma.user.delete({ where: { email } });
 }
 
+export type UserSession = Pick<User, 'id' | 'email'>
 export async function verifyLogin(
   email: User["email"],
   password: Password["hash"]
 ) {
-  const userWithPassword = await prisma.user.findUnique({
+  const user = await prisma.user.findUnique({
     where: { email },
-    include: {
-      password: true,
-    },
-  });
+    include: { password: true },
+  })
 
-  if (!userWithPassword || !userWithPassword.password) {
-    return null;
-  }
+  if (!user || !user.password) return null
 
   const isValid = await bcrypt.compare(
     password,
-    userWithPassword.password.hash
-  );
+    user.password.hash
+  )
 
-  if (!isValid) {
-    return null;
-  }
 
-  const { password: _password, ...userWithoutPassword } = userWithPassword;
-
-  return userWithoutPassword;
+  return isValid ? { id: user.id, email: user.email } : null
 }

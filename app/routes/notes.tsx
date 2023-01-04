@@ -1,14 +1,17 @@
 import type { LoaderArgs } from "@remix-run/node";
+import { getUserOrRedirect } from "~/services/auth.server"
 import { json } from "@remix-run/node";
 import { Form, Link, NavLink, Outlet, useLoaderData } from "@remix-run/react";
 
 import { getNoteListItems } from "~/models/note.server";
-import { requireUserId } from "~/session.server";
 import { useUser } from "~/utils";
 
 export async function loader({ request }: LoaderArgs) {
-  const userId = await requireUserId(request);
-  const noteListItems = await getNoteListItems({ userId });
+  const user = await getUserOrRedirect(request)
+
+  const noteListItems = await getNoteListItems({
+    userId: user.id
+  });
   return json({ noteListItems });
 }
 

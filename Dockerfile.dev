@@ -1,0 +1,39 @@
+# Base layer
+FROM node:18.7.0 as base
+
+ENV NODE_ENV=dev
+
+# Install openssl for Prisma
+RUN apt-get update && apt-get install -y openssl
+
+# Deps layer
+FROM base as deps
+WORKDIR /myapp
+
+ADD package.json ./
+RUN npm install --legacy-peer-deps
+
+# Build layer
+FROM base as build
+WORKDIR /myapp
+
+COPY --from=deps /myapp/node_modules /myapp/node_modules
+
+ADD prisma .
+RUN npx prisma generate
+
+ADD . .
+RUN npm run build
+
+# Final layer
+FROM base
+WORKDIR /myapp
+
+ADD .env ./
+COPY --from=build /myapp/node_modules /myapp/node_modules
+COPY --from=build /myapp/node_modules/.prisma /myapp/node_modules/.prisma
+COPY --from=build /myapp/build /myapp/build
+ADD . .
+
+# CMD ["npm", "dev"]
+ENTRYPOINT ["tail", "-f", "/dev/null"]
